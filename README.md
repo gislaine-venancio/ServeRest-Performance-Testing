@@ -1,5 +1,13 @@
 # API Testing with JMeter — ServeRest
 
+![JMeter](https://img.shields.io/badge/Apache-JMeter-D22128?style=for-the-badge&logo=apachejmeter&logoColor=white)
+![API](https://img.shields.io/badge/API-REST-blue?style=for-the-badge)
+![Load Test](https://img.shields.io/badge/Load%20Test-1%20vs%20100%20Users-orange?style=for-the-badge)
+![Endpoints](https://img.shields.io/badge/Endpoints-4-blue?style=for-the-badge)
+![Status](https://img.shields.io/badge/Status-Active-brightgreen?style=for-the-badge)
+
+Automated API test project built with **Apache JMeter**, using the open source public API **[ServeRest](https://serverest.dev/)** as the target. The goal of this project is to build a functional test plan with multiple requests, validate REST API behavior, and analyze performance metrics under different load conditions (1 user vs. 100 concurrent users).
+
 Automated API test project built with **Apache JMeter**, using the open source public API **[ServeRest](https://serverest.dev/)** as the target. The goal of this project is to build a functional test plan with multiple requests, validate REST API behavior, and analyze performance metrics under different load conditions (1 user vs. 100 concurrent users).
 
 ## 🎯 Objective
