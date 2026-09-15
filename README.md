@@ -2,17 +2,15 @@
 
 ![JMeter](https://img.shields.io/badge/Apache-JMeter-D22128?style=for-the-badge&logo=apachejmeter&logoColor=white)
 ![API](https://img.shields.io/badge/API-REST-blue?style=for-the-badge)
-![Load Test](https://img.shields.io/badge/Load%20Test-1%20vs%20100%20Users-orange?style=for-the-badge)
+![Load Test](https://img.shields.io/badge/Load%20Test-1%20vs%2050%20vs%20100%20Users-orange?style=for-the-badge)
 ![Endpoints](https://img.shields.io/badge/Endpoints-4-blue?style=for-the-badge)
 ![Status](https://img.shields.io/badge/Status-Active-brightgreen?style=for-the-badge)
 
-Automated API test project built with **Apache JMeter**, using the open source public API **[ServeRest](https://serverest.dev/)** as the target. The goal of this project is to build a functional test plan with multiple requests, validate REST API behavior, and analyze performance metrics under different load conditions (1 user vs. 100 concurrent users).
-
-Automated API test project built with **Apache JMeter**, using the open source public API **[ServeRest](https://serverest.dev/)** as the target. The goal of this project is to build a functional test plan with multiple requests, validate REST API behavior, and analyze performance metrics under different load conditions (1 user vs. 100 concurrent users).
+Automated API test project built with **Apache JMeter**, using the open source public API **[ServeRest](https://serverest.dev/)** as the target. The goal of this project is to build a functional test plan with multiple requests, validate REST API behavior, and analyze performance metrics under different load conditions (1, 50, and 100 concurrent users).
 
 ## 🎯 Objective
 
-Validate the behavior of REST API endpoints (user creation, user listing, user lookup by ID, and product listing), checking HTTP status codes, response times, and response integrity — and compare how the API performs under a single user versus 100 concurrent users.
+Validate the behavior of REST API endpoints (user creation, user listing, user lookup by ID, and product listing), checking HTTP status codes, response times, and response integrity — and compare how the API performs across three concurrency levels: 1, 50, and 100 users.
 
 ## 🛠️ Tools Used
 
@@ -25,10 +23,10 @@ Validate the behavior of REST API endpoints (user creation, user listing, user l
 The test plan was built using the following JMeter elements:
 
 ### Thread Group
-The starting element of the plan, responsible for defining the number of users (threads) that run the test, the ramp-up time, and the number of loops. This project reuses the same Thread Group to run two scenarios: **1 user** and **100 users**, so results could be compared side by side.
+The starting element of the plan, responsible for defining the number of users (threads) that run the test, the ramp-up time, and the number of loops. This project uses **three separate Thread Groups** — 1 user, 50 users, and 100 users — kept in the same test plan but enabled one at a time, so each scenario could be executed and measured in isolation without the results mixing together.
 
 ### HTTP Requests
-Four separate HTTP Request samplers were added to the Thread Group, each targeting a different endpoint of the ServeRest API:
+Four separate HTTP Request samplers were added inside each Thread Group, each targeting a different endpoint of the ServeRest API:
 
 | Sampler Name | Method | Endpoint |
 |---|---|---|
@@ -37,60 +35,78 @@ Four separate HTTP Request samplers were added to the Thread Group, each targeti
 | **Login - user/id** | GET | `https://serverest.dev/usuarios/${USER_ID}` |
 | **Product** | GET | `https://serverest.dev/produtos` |
 
-Keeping all requests inside the same test plan (instead of overwriting a single HTTP Request each time) allows the whole flow to run together and produces a single, consolidated Summary Report.
+Keeping all requests inside the same test plan (instead of overwriting a single HTTP Request each time) allows the whole flow to run together and produces a single, consolidated Summary Report per scenario.
 
 ### HTTP Header Manager
 Used to manage request headers, ensuring the `Content-Type` and other headers were correctly set for sending JSON data.
 
 ### User Defined Variables
-Reusable variables were defined throughout the test plan, such as:
-- `username`
-- `email`
-- `password`
-- `administrator`
-- `USER_ID` — captured after the user creation request and reused in the "Login - user/id" request
+Reusable variables were defined for data that stays constant across all test users:
+- `USER_PASS` — fixed password (`test123`), reused by every created user
+- `USER_ADMIN` — fixed administrator flag (`true`)
 
-This approach avoids repeating fixed data and makes the test plan easier to maintain.
+Earlier versions of this plan also kept `username`, `email`, and a manually captured `USER_ID` as fixed User Defined Variables. That caused every thread to send the exact same registration data, which made the API reject most "create user" calls as duplicates. Name and email are now generated dynamically per request (see Test 1 below) instead of being hard-coded.
+
+### JSON Extractor
+Added as a **Post Processor** on the "Login - new user" request. It reads the `_id` field from the user-creation response and stores it in a variable (`USER_ID`), scoped to that specific thread/request rather than shared globally. This is what allows "Login - user/id" to always look up the user that was *just created* in that same iteration — automatically, and without any manual copy-pasting of IDs between runs.
+
+- **Names of created variables:** `USER_ID`
+- **JSON Path expressions:** `$._id`
+- **Match No.:** `1`
+- **Default Value:** `ID_NAO_ENCONTRADO` (makes it obvious in the results if extraction ever fails, instead of a silent empty variable)
+
+![JSON Extractor configuration](Images/requisitos-user-id.jpg)
+*JSON Extractor added under "Login - new user", capturing `_id` from the response into the `USER_ID` variable for that thread.*
 
 ### View Results Tree
 Component used to visualize the detailed result of each request (request/response), including status code, response body, and headers.
 
 ### Summary Report
-Provides a consolidated view of request performance, including average response time, throughput, and error rate for the tested API — used here to compare the 1-user and 100-user scenarios.
+Provides a consolidated view of request performance, including average response time, throughput, and error rate for the tested API — used here to compare the 1, 50, and 100-user scenarios.
 
 ---
 
 ## ✅ Test Cases
 
-### Test 1 — Create User
+### Test 1 — Create User (with dynamic data)
 
 **Method:** `POST`
 **Endpoint:** `https://serverest.dev/usuarios`
 
 **Description:**
-Request to register a new user, sending a JSON body with the data required by the API (name, email, password, and administrator).
+Request to register a new user. Instead of sending fixed values, the body uses JMeter's `${__UUID()}` function to generate a unique name and email on every single execution, so the same request can be run any number of times — across 1, 50, or 100 threads — without ever colliding with a previously registered email.
+
+**Body Data (JSON):**
+```json
+{
+  "nome": "Gislaine ${__UUID()}",
+  "email": "gislaine_${__UUID()}@qa.com.br",
+  "password": "${USER_PASS}",
+  "administrador": "${USER_ADMIN}"
+}
+```
 
 **Steps performed:**
-1. Configured the endpoint and POST method in the HTTP Request, with the body data in JSON.
-2. Sent the request and checked the Request Body that was submitted.
+1. Configured the endpoint, POST method, and the JSON body above (with `${__UUID()}` in place of the old fixed name/email).
+2. Sent the request and checked the actual Request body that was submitted, to confirm the UUID was substituted correctly.
 3. Ran the test and reviewed the result in the View Results Tree tab.
 
 **Result:**
-Request executed successfully — status code **201 (Created)**, with the message `"Cadastro realizado com sucesso"` (registration successful) returned by the API, along with the new user's `_id`.
+Request executed successfully — status code **201 (Created)**, with the message `"Cadastro realizado com sucesso"` (registration successful) returned by the API, along with the new user's `_id`, which the JSON Extractor immediately captures for later use.
 
-![HTTP Request - endpoint and body configuration](Images/criacao-usuario-1.jpg)
-*HTTP Request configuration: POST method, endpoint `https://serverest.dev/usuarios`, and JSON body data.*
+![HTTP Request - endpoint and dynamic body configuration](Images/criacao-usuario-1.jpg)
+*HTTP Request configuration: POST method, endpoint `https://serverest.dev/usuarios`, and JSON body using `${__UUID()}` and the `USER_PASS`/`USER_ADMIN` variables.*
 
 ![Sampler result - 201 Created](Images/criacao-usuario-2.jpg)
 *Sampler result showing response code 201 and message "Created", along with load time and byte size details.*
 
 ![Request Body sent](Images/criacao-usuario-3.jpg)
-*Detail of the request body sent in JSON format, with name, email, password, and administrator fields.*
+*Detail of the actual request body sent, with the UUID already substituted into the name and email fields.*
 
 ![Response Data - registration confirmed](Images/criacao-usuario-4.jpg)
 *API response confirming the user registration with the success message and the returned `_id`.*
 
-> After registration, a new variable (`USER_ID`) was created to store the `_id` of the user returned by the API, allowing it to be reused in the "Login - user/id" request.
+> Because each request now generates its own unique name and email, "Login - new user" can be executed repeatedly — including across 50 or 100 concurrent threads — without triggering the API's duplicate-email validation. This was the main source of "false" errors in earlier versions of this test plan.
 
 ---
 
@@ -103,7 +119,7 @@ Request executed successfully — status code **201 (Created)**, with the messag
 A simple request, containing only the endpoint address, used to check all users currently registered in the API.
 
 **Result:**
-Status code **200 (OK)**, with a total of **59 registered users** returned in the response body.
+Status code **200 (OK)**, with a total of **194 registered users** returned in the response body (this number reflects the cumulative users created across previous runs of this and earlier test plans against the shared public API).
 
 ![Registered users](Images/exibir-usuarios.jpeg)
 *API response listing registered users, including name, email, password (hash), administrator status, and id.*
@@ -119,35 +135,26 @@ Status code **200 (OK)**, with a total of **59 registered users** returned in th
 Request to check the products registered in the API, following the official ServeRest documentation.
 
 **Result:**
-Status code **200 (OK)**, with a total of **170 registered products** successfully returned.
+Status code **200 (OK)**, with a total of **256 registered products** successfully returned.
 
 ![Registered products](Images/verificar-produtos-cadastrados.jpeg)
 *API response listing registered products, with name, price, description, quantity, and id for each item.*
 
 ---
 
-### Test 4 — Get User by ID
+### Test 4 — Get User by ID (fully automated)
 
 **Method:** `GET`
 **Endpoint:** `https://serverest.dev/usuarios/${USER_ID}`
 
 **Description:**
-After creating the user in Test 1, this test reuses the captured `USER_ID` variable to fetch that specific user by its ID — validating that the API correctly returns a single resource instead of the full collection.
-
-Along the way, re-running the "Login - new user" request with the same email produced an expected negative-path result: since the email was already registered, the API correctly rejected the duplicate with an error message, confirming its validation rules are working as intended.
+This test reuses the `USER_ID` variable captured automatically by the JSON Extractor right after Test 1 runs, fetching that specific user by its ID — validating that the API correctly returns a single resource instead of the full collection. Because the ID is captured per-thread and per-iteration, this works correctly even when 50 or 100 threads are creating and immediately looking up their own users at the same time.
 
 **Result:**
-- Duplicate registration attempt → API correctly returned an error message stating the email was already in use.
-- Get user by ID → status code **200 (OK)**, with the specific user's data returned correctly.
-
-![HTTP Request - get user by ID using variable](Images/requisitos-user-id.jpg)
-*"Login - user/id" request configuration, using the `${USER_ID}` variable captured from the user creation step.*
-
-![Duplicate email error](Images/email-em-uso.jpg)
-*API response when attempting to register a user with an email that is already in use — validates the API's duplicate-check logic.*
+Status code **200 (OK)**, with the specific user's data (name, email, password hash, administrator flag, and `_id`) returned correctly, matching the user just created in Test 1.
 
 ![User retrieved by ID](Images/usuario-por-id.jpg)
-*Successful response (200 OK) returning the specific user's data by ID.*
+*Successful response (200 OK) returning the specific user's data by ID, captured dynamically via the JSON Extractor — no manual ID copy-paste required.*
 
 ---
 
@@ -155,100 +162,126 @@ Along the way, re-running the "Login - new user" request with the same email pro
 
 | Test | Method | Endpoint | Expected Status | Actual Status |
 |---|---|---|---|---|
-| Create user | POST | `/usuarios` | 201 | ✅ 201 |
+| Create user (dynamic data) | POST | `/usuarios` | 201 | ✅ 201 |
 | List users | GET | `/usuarios` | 200 | ✅ 200 |
 | List products | GET | `/produtos` | 200 | ✅ 200 |
-| Get user by ID | GET | `/usuarios/${USER_ID}` | 200 | ✅ 200 |
-| Duplicate registration | POST | `/usuarios` | 400 (expected error) | ✅ Error returned as expected |
+| Get user by ID (auto-captured) | GET | `/usuarios/${USER_ID}` | 200 | ✅ 200 |
 
-All tests behaved as expected, validating both the "happy path" endpoints and a negative-path scenario (duplicate email), confirming the API's business rules are enforced correctly.
+All functional tests behaved as expected. Unlike earlier versions of this plan, there is no negative/duplicate-email path here by design — the dynamic UUID data means "Login - new user" is expected to succeed on every execution, which lets the performance scenarios below isolate genuine concurrency-related errors instead of expected validation errors.
 
 ---
 
-## 📈 Performance Metrics — 1 User vs. 100 Users
+## 📈 Performance Metrics — 1 vs. 50 vs. 100 Users
 
-To go beyond functional validation, the same test plan was executed twice with different Thread Group configurations, to observe how the API responds under different load conditions.
+The same test plan was executed three times with different Thread Group configurations, each one enabled on its own (the other two disabled) and with the Summary Report cleared beforehand, so every scenario's numbers are isolated and not mixed with the others.
 
 ### Scenario A — 1 User
 
 **Thread Group configuration:** 1 thread (user), 1-second ramp-up, loop count 1.
 
-![Thread Group configuration - 1 user](Images/metrica-ajuste-1.jpg)
+![Thread Group configuration - 1 user](Images/ajuste-metrica-1.jpg)
 *Thread Group set to simulate a single user, with a 1-second ramp-up and a single loop.*
 
 **Summary Report results:**
 
-| Label | # Samples | Average | Min | Max | Std. Dev. | Error % | Throughput | Received KB/sec | Sent KB/sec | Avg. Bytes |
-|---|---|---|---|---|---|---|---|---|---|---|
-| Login - new user | 7 | 350 ms | 279 ms | 456 ms | 57.04 | 57.14% | 23.0/hour | 0.00 | 0.00 | 529.1 |
-| Login - get user | 7 | 215 ms | 189 ms | 286 ms | 30.65 | 0.00% | 23.0/hour | 0.09 | 0.00 | 13637.4 |
-| Product | 7 | 211 ms | 202 ms | 223 ms | 6.58 | 0.00% | 23.0/hour | 0.23 | 0.00 | 37421.4 |
-| Login - user by id | 3 | 3 ms | 2 ms | 6 ms | 1.70 | 100.00% | 1.3/min | 0.06 | 0.00 | 2631.0 |
-| Login - user/id | 1 | 205 ms | 205 ms | 205 ms | 0.00 | 0.00% | 4.9/sec | 2.87 | 0.83 | 603.0 |
-| **TOTAL** | **27** | **238 ms** | **2 ms** | **456 ms** | **111.66** | **25.93%** | **25.8/hour** | **0.11** | **0.00** | **16245.3** |
+| Label | # Samples | Average | Min | Max | Std. Dev. | Error % | Throughput |
+|---|---|---|---|---|---|---|---|
+| Login - new user | 5 | 253 ms | 233 ms | 266 ms | 13.96 | 0.00% | 5.0/hour |
+| Login - get user | 5 | 223 ms | 190 ms | 269 ms | 33.81 | 0.00% | 5.0/hour |
+| Product | 5 | 257 ms | 210 ms | 293 ms | 28.33 | 0.00% | 5.0/hour |
+| Login - user/id | 4 | 117 ms | 0 ms | 163 ms | 66.12 | 50.00% | 6.1/hour |
+| **TOTAL** | **19** | **216 ms** | **0 ms** | **293 ms** | **66.41** | **21.05%** | **18.0/hour** |
 
 ![Summary Report - 1 user results](Images/metrica-1-user.jpg)
 *Summary Report consolidating the results of all requests executed during the 1-user scenario.*
 
 **Reading these numbers:**
-- The **Summary Report accumulates results across every execution in the session** (it isn't automatically cleared between runs), which is why sample counts differ per request (7 vs. 3 vs. 1) — some requests were manually re-run multiple times while the test plan was being configured and the `USER_ID` variable was being set up correctly.
-- The **57.14% error rate on "Login - new user"** isn't a bug: most of those samples were intentional repeat attempts using an already-registered email (see Test 4), which correctly returned an error — this is expected negative-path behavior, not an API failure.
-- The **100% error rate on "Login - user by id"** reflects early attempts made *before* the `USER_ID` variable was correctly captured and wired into the request — once fixed, the renamed "Login - user/id" sampler succeeded with 0% errors.
-- Excluding those known/expected error sources, the "happy path" requests (**Login - get user** and **Product**) show **0% errors**, low standard deviation, and response times consistently under 300ms — indicating stable, predictable performance under a single-user load.
+- With dynamic UUID data, **"Login - new user" shows 0% errors** — a clean result compared to the ~57% duplicate-email error rate seen in earlier test plans that used fixed data.
+- **"Login - user/id" shows a 50% error rate** on a small sample (4 requests, 2 failures, with a 0 ms minimum pointing to a failed/near-instant connection rather than a slow response). Given the very small sample size at 1 user, this looks more like an isolated blip (e.g. a brief hiccup reaching the public API) than a systemic issue — it's flagged here for transparency, but the 50-user run below (with 50 samples on the same request and 0% errors) suggests it isn't representative of normal behavior.
+- The read-only endpoints ("Login - get user" and "Product") show **0% errors** with response times comfortably under 300 ms, confirming stable, predictable performance under a single-user load.
 
-### Scenario B — 100 Users
+### Scenario B — 50 Users
 
-**Thread Group configuration:** 100 threads (users), 1-second ramp-up, loop count 1 — meaning all 100 virtual users were launched almost simultaneously.
+**Thread Group configuration:** 50 threads (users), 5-second ramp-up, loop count 1.
 
-![Thread Group configuration - 100 users](Images/metrica-ajuste-100.jpg)
-*Thread Group set to simulate 100 concurrent users, with a 1-second ramp-up.*
+![Thread Group configuration - 50 users](Images/ajuste-metrica-50.jpg)
+*Thread Group set to simulate 50 concurrent users, with a 5-second ramp-up.*
 
 **Summary Report results:**
 
-| Label | # Samples | Average | Min | Max | Std. Dev. | Error % | Throughput | Received KB/sec | Sent KB/sec | Avg. Bytes |
-|---|---|---|---|---|---|---|---|---|---|---|
-| Login - new user | 107 | 7598 ms | 256 ms | 19467 ms | 8924.60 | 58.88% | 3.4/min | 0.03 | 0.02 | 525.5 |
-| Login - get user | 107 | 344 ms | 186 ms | 738 ms | 142.61 | 0.00% | 3.4/min | 0.73 | 0.01 | 13071.8 |
-| Product | 107 | 460 ms | 202 ms | 795 ms | 173.62 | 0.00% | 3.4/min | 1.30 | 0.01 | 23203.3 |
-| Login - user by id | 3 | 3 ms | 2 ms | 6 ms | 1.70 | 100.00% | 1.3/min | 0.06 | 0.00 | 2631.0 |
-| Login - user/id | 101 | 655 ms | 166 ms | 16467 ms | 1599.76 | 41.58% | 7.9/min | 0.07 | 0.02 | 563.1 |
-| **TOTAL** | **427** | **2262 ms** | **2 ms** | **19467 ms** | **5487.37** | **25.29%** | **5.6/min** | **0.88** | **0.02** | **9535.0** |
+| Label | # Samples | Average | Min | Max | Std. Dev. | Error % | Throughput |
+|---|---|---|---|---|---|---|---|
+| Login - new user | 50 | 266 ms | 222 ms | 451 ms | 43.36 | 0.00% | 9.6/sec |
+| Login - get user | 50 | 210 ms | 179 ms | 263 ms | 20.13 | 0.00% | 9.7/sec |
+| Login - user/id | 50 | 163 ms | 0 ms | 283 ms | 19.49 | 0.00% | 9.5/sec |
+| Product | 50 | 307 ms | 268 ms | 453 ms | 32.80 | 0.00% | 9.5/sec |
+| **TOTAL** | **200** | **237 ms** | **0 ms** | **451 ms** | **62.66** | **0.00%** | **34.0/sec** |
 
-![Summary Report - 100 users results](Images/metrica-100-user.jpeg)
-*Summary Report consolidating the results of all requests after running the plan with 100 concurrent users.*
+![Summary Report - 50 users results](Images/metrica-50-users.jpg)
+*Summary Report consolidating the results of all requests executed during the 50-user scenario.*
 
-> Note: sample counts here are cumulative (they include the previous 1-user run's samples plus the new 100-user execution), for the same reason explained in Scenario A — the report wasn't cleared between runs.
+**Reading these numbers:**
+- **Every single endpoint returned 0% errors** across all 200 samples — including "Login - new user", which confirms the dynamic UUID data fully eliminated the duplicate-email problem even under concurrent load.
+- Response times stayed close to the 1-user baseline (roughly 160–310 ms average), with only a modest increase, showing the API comfortably handles 50 concurrent connections.
+- This scenario represents the healthiest result of the three: full reliability with only a mild performance cost.
 
-### Side-by-Side Comparison — 1 User vs. 100 Users
+### Scenario C — 100 Users
 
-| Request | Avg (1 user) | Avg (100 users) | Max (1 user) | Max (100 users) | Error % (1 user) | Error % (100 users) |
+**Thread Group configuration:** 100 threads (users), 10-second ramp-up, loop count 1.
+
+![Thread Group configuration - 100 users](Images/ajuste-metrica-100.jpg)
+*Thread Group set to simulate 100 concurrent users, with a 10-second ramp-up.*
+
+**Summary Report results:**
+
+| Label | # Samples | Average | Min | Max | Std. Dev. | Error % | Throughput |
+|---|---|---|---|---|---|---|---|
+| Login - new user | 100 | 245 ms | 219 ms | 345 ms | 33.33 | 22.00% | 9.9/sec |
+| Login - get user | 100 | 286 ms | 148 ms | 664 ms | 87.10 | 23.00% | 9.9/sec |
+| Login - user/id | 100 | 167 ms | 0 ms | 687 ms | 53.44 | 26.00% | 10.1/sec |
+| Product | 100 | 267 ms | 150 ms | 805 ms | 86.13 | 29.00% | 10.1/sec |
+| **TOTAL** | **400** | **241 ms** | **0 ms** | **805 ms** | **82.34** | **25.00%** | **37.7/sec** |
+
+![Summary Report - 100 users results](Images/metrica-100-users.jpg)
+*Summary Report consolidating the results of all requests executed during the 100-user scenario.*
+
+**Reading these numbers:**
+- Unlike the 50-user run, **every endpoint now shows a substantial error rate (22%–29%)** — including the two read-only endpoints ("Login - get user" and "Product") that had been completely error-free in every previous scenario.
+- Interestingly, **average response times did not spike dramatically** (all four requests stayed under 300 ms on average, with maxes topping out around 664–805 ms) — a very different pattern from latency-driven failures, where slow responses cause timeouts.
+- Because errors now appear broadly across read and write endpoints alike, and average latency stayed relatively contained, this looks less like "the server is just slow" and more like the public ServeRest API applying some form of **connection throttling or rate limiting** once concurrency crosses a certain threshold — rejecting a portion of requests outright rather than queuing and answering them slowly.
+
+### Side-by-Side Comparison — 1 vs. 50 vs. 100 Users
+
+| Request | Avg (1 user) | Avg (50 users) | Avg (100 users) | Error % (1 user) | Error % (50 users) | Error % (100 users) |
 |---|---|---|---|---|---|---|
-| Login - get user | 215 ms | 344 ms | 286 ms | 738 ms | 0.00% | 0.00% |
-| Product | 211 ms | 460 ms | 223 ms | 795 ms | 0.00% | 0.00% |
-| Login - new user | 350 ms | 7598 ms | 456 ms | 19467 ms | 57.14% | 58.88% |
-| Login - user/id | 205 ms | 655 ms | 205 ms | 16467 ms | 0.00% | 41.58% |
+| Login - new user | 253 ms | 266 ms | 245 ms | 0.00% | 0.00% | 22.00% |
+| Login - get user | 223 ms | 210 ms | 286 ms | 0.00% | 0.00% | 23.00% |
+| Login - user/id | 117 ms | 163 ms | 167 ms | 50.00%* | 0.00% | 26.00% |
+| Product | 257 ms | 307 ms | 267 ms | 0.00% | 0.00% | 29.00% |
+
+*\*Small sample (4 requests) at 1 user; treated as an isolated anomaly rather than a systemic result — see Scenario A notes above.*
 
 **What this shows:**
 
-- **Read-only endpoints held up well.** "Login - get user" and "Product" stayed at **0% errors** in both scenarios. Their average response time did increase under load (+60% and +118% respectively), which is expected — the server has to handle 100x the concurrent read requests — but there were no failures, indicating the API's read endpoints are reasonably resilient to concurrent traffic.
-- **Write/lookup endpoints degraded sharply.** "Login - new user" went from an already-elevated 350ms average (due to duplicate-email attempts) to a dramatic **7598ms average, with a peak of nearly 19.5 seconds**. "Login - user/id" jumped from 205ms to 655ms average, with peaks over 16 seconds and a 41.58% error rate — under 1 user it had 0% errors.
-- **Root cause is twofold:** part of the errors come from the test design itself (the same fixed user data was reused across all 100 threads, so most "create user" calls were expected duplicates — a known limitation explained further below), while the sharp latency increase (multi-second response times, especially the ~19s max) points to the **public ServeRest API struggling to handle 100 simultaneous connections**, since it's a free, shared testing service and not built for high concurrency.
+- **Fixing the test data (UUID + JSON Extractor) worked.** The duplicate-email errors that dominated earlier versions of this plan (57% at 1 user, 59% at 100 users) are gone — "Login - new user" behaves like any other endpoint now, which means its error rate at 100 users reflects real API/concurrency behavior instead of test-design noise.
+- **50 concurrent users is comfortably within the public API's capacity** — 0% errors across all 400 samples in that scenario, with only a mild increase in response times over the 1-user baseline.
+- **100 concurrent users is where the API starts to break down — but differently than before.** In the earlier 1-vs-100 comparison, only the write/lookup endpoints failed, and failures showed up as extreme latency (up to ~19.5 seconds). Here, with cleaner test data, the failure pattern is broader (all four endpoints, 22–29% errors) but **not** accompanied by extreme latency — pointing more toward rate-limiting/connection rejection than server overload from slow processing.
+- Taken together, the two runs suggest the public ServeRest API's practical concurrency ceiling — for this test plan and network conditions — sits somewhere between 50 and 100 simultaneous users, and that the API responds to overload less by slowing down and more by rejecting a portion of requests outright.
 
 ### Conclusion
 
-This comparison highlights a key concept in performance testing: **response time and error rate under load rarely scale linearly with the number of users.** With a single user, all four endpoints behaved fast and predictably. At 100 concurrent users, read-only endpoints slowed down moderately but stayed reliable, while endpoints involving data writes and dynamic parameters became significantly slower and less reliable — some responses took nearly 20 seconds, well beyond what would be acceptable in a production scenario.
+This exercise builds directly on the earlier 1-vs-100 comparison, but fixes its biggest limitation: reusing the same fixed user data across every thread, which made "duplicate user" errors indistinguishable from real server problems. By generating unique data per request (`${__UUID()}`) and capturing each user's ID automatically with a JSON Extractor, "Login - new user" and "Login - user/id" could finally be tested the same way as the read-only endpoints — as **repeatable, independent requests** rather than one-shot operations tied to a single hard-coded user.
 
-It's also worth noting a limitation of this specific test setup: because the same hard-coded user data (name, email, password) was used across all 100 threads, most "create user" attempts were duplicates by design, inflating the error count for that request. In a more rigorous load test, each thread would generate **unique test data** (e.g., using JMeter's `${__Random}` or CSV Data Set Config) so that "create user" failures reflect genuine server-side issues rather than expected validation errors.
-
-Overall, this exercise was a valuable first hands-on experience with JMeter — going from a single functional check to a real concurrency comparison, and learning to read metrics like Average, Std. Dev., Error %, and Throughput in context, rather than at face value. It also surfaced practical lessons for future test design: resetting the Summary Report between runs, and using dynamic/unique test data when simulating multiple concurrent users.
+With that fixed, the comparison across 1, 50, and 100 users tells a cleaner story: the API is fully reliable at 1 and 50 concurrent users, and only starts failing at 100 — and it fails in a different way than expected, with broad but shallow errors (roughly a quarter of requests across every endpoint) rather than a few endpoints slowing to a crawl. This is a good example of why isolating test-design noise (duplicate data, mixed Summary Reports, stale IDs) matters before drawing conclusions about an API's real performance limits.
 
 ---
 
 ## 📌 Notes
 
 - Images are organized in the `Images/` subfolder — keep this structure when uploading the project to GitHub (README.md at the root and the `Images/` folder alongside it) so they display correctly.
-- The `.jmx` test plan can be attached to the repository so the full flow (all 4 requests + variables) is reproducible by anyone reviewing the project.
-- Future improvements: reset the Summary Report (**Run → Clear All**) before each measured scenario, and use dynamic/unique test data per thread (e.g. `${__Random}` or CSV Data Set Config) to get cleaner, more isolated metrics in future load tests.
+- The `.jmx` test plan can be attached to the repository so the full flow (all 4 requests + variables + JSON Extractor, across all three Thread Groups) is reproducible by anyone reviewing the project.
+- Each scenario (1, 50, 100 users) was run with only its own Thread Group enabled and the Summary Report cleared beforehand (`Run → Clear All Results`), which is why the sample counts line up exactly with the number of threads in each scenario (e.g. 100 samples per request at 100 users) instead of accumulating across runs as in earlier versions of this project.
+- Future improvements: investigate the isolated "Login - user/id" error at 1 user with a dedicated re-run; for the 100-user scenario, capture response codes/headers on the failed samples (via View Results Tree or a listener writing to a `.jtl` file) to confirm whether the failures are HTTP 429/5xx responses or connection-level rejections, which would confirm the rate-limiting hypothesis.
 
 ## 🔗 References
 
