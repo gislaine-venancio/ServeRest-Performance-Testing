@@ -8,6 +8,12 @@
 
 Automated API test project built with **Apache JMeter**, using the open source public API **[ServeRest](https://serverest.dev/)** as the target. The goal of this project is to build a functional test plan with multiple requests, validate REST API behavior, and analyze performance metrics under different load conditions (1, 50, and 100 concurrent users).
 
+## 🔑 Key Findings
+
+- Fixed test data (same name/email for every user) caused false "duplicate user" errors — fixed by generating unique data per request with `${__UUID()}` and capturing each user's ID automatically with a JSON Extractor.
+- The API handled **50 concurrent users with 0% errors**.
+- At **100 concurrent users, error rates rose to 22–29% across all endpoints** — including read-only ones that had no errors before, suggesting the API starts rejecting requests under high load rather than just responding slower.
+
 ## 🎯 Objective
 
 Validate the behavior of REST API endpoints (user creation, user listing, user lookup by ID, and product listing), checking HTTP status codes, response times, and response integrity — and compare how the API performs across three concurrency levels: 1, 50, and 100 users.
